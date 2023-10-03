@@ -7,7 +7,6 @@ py_binary(
     requirement("absl-py"),
     requirement("freezegun"),
     requirement("prometheus-client"),
-    requirement("python-arptable"),
     requirement("python-dateutil"),
     requirement("six"),
   ],
