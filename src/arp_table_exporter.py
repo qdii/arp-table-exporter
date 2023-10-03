@@ -2,6 +2,7 @@
 """Monitors neighbors and report them on /metrics."""
 
 from collections import namedtuple
+import csv
 import datetime
 import time
 from typing import Dict
@@ -9,7 +10,6 @@ from typing import Dict
 from absl import app
 from absl import flags
 from absl import logging
-import python_arptable
 from prometheus_client import start_http_server, Gauge
 
 
@@ -17,6 +17,8 @@ _PORT = flags.DEFINE_integer(
     'port', 8000, 'The port on which /metrics is served.')
 _FREQ = flags.DEFINE_integer(
     'frequency', 30, 'How often neighbor discovery is perfomed, in seconds.')
+_PATH = flags.DEFINE_string(
+    'path', '/proc/net/arp', 'Absolute path to an ARP table')
 
 
 Neighbor = namedtuple(
@@ -32,10 +34,22 @@ LAST_SEEN_METRIC = Gauge(
     ['mac_address'])
 
 
-def arp_table() -> Dict[str, Neighbor]:
+def get_arp_table():
+    """Get ARP table from /proc/net/arp (or the value of --path). """
+    with open(_PATH.value, encoding='utf-8') as arpt:
+        names = [
+            'IP address', 'HW type', 'Flags', 'HW address', 'Mask', 'Device'
+        ]  # arp 1.88, net-tools 1.60
+        reader = csv.DictReader(
+            arpt, fieldnames=names, skipinitialspace=True, delimiter=' ')
+        next(reader)  # Skip header.
+        return list(reader)
+
+
+def parse_arp_table() -> Dict[str, Neighbor]:
     """Maps a mac address to its associated neighbor."""
     res = {}
-    for entry in python_arptable.get_arp_table():
+    for entry in get_arp_table():
         logging.debug(f"Seen neighbor: {entry['HW address']}")
         res[entry['HW address']] = Neighbor(
                 device=entry['Device'],
@@ -67,7 +81,7 @@ def main(argv):
     start_http_server(_PORT.value)
     # Parse ARP table and export metrics.
     while True:
-        update(arp_table())
+        update(parse_arp_table())
         export()
         time.sleep(_FREQ.value)
 
